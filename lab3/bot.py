@@ -1,6 +1,7 @@
 import os
 import asyncio
 import aiohttp
+from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
@@ -11,11 +12,9 @@ load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# Основна та резервні моделі
 PRIMARY_MODEL = "gemini-3.5-flash"
 FALLBACK_MODELS = ["gemini-3.1-flash-lite", "gemini-3.6-flash"]
 
-# Ініціалізація бота та диспетчера
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
 
@@ -77,20 +76,30 @@ async def handle_ai_request(message: types.Message):
                         await message.answer(ai_text)
                         return
                     elif response.status == 503:
-                        print(f"Модель {model} тимчасово перевантажена (503), переходимо до резервної...")
                         continue
-                    else:
-                        error_msg = result.get('error', {}).get('message', 'Помилка API')
-                        print(f"Помилка [{model}]: {error_msg}")
-            except Exception as e:
+            except Exception:
                 continue
 
     await message.answer("Вибачте, сервіс AI зараз перевантажений. Спробуйте ще раз через пару секунд.")
 
+# Хендлер для перевірки стану Render (Health Check)
+async def handle_health_check(request):
+    return web.Response(text="OK")
+
 async def main():
     print("Бот запущений...")
+
+    # Старт фонового веб-сервера для Render
+    app = web.Application()
+    app.router.add_get("/", handle_health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.getenv("PORT", 8080))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+
+    # Старт поллінгу Telegram-бота
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
-
